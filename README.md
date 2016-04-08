@@ -19,7 +19,7 @@ Help Options:
 ```
 
 ```
-$ go run check-mysql-user.go --account-name=readuser --account-host=localhost
+$ check-mysql-user --account-name=readuser --account-host=localhost
 MySQL User OK: user 'readuser'@'localhost' exists
 ```
 

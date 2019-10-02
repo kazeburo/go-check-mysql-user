@@ -1,27 +1,22 @@
-VERSION=0.0.1
+VERSION=0.0.2
+LDFLAGS=-ldflags "-X main.Version=${VERSION}"
+GO111MODULE=on
 
 all: check-mysql-user
 
 .PHONY: check-mysql-user
 
-gom:
-	go get -u github.com/mattn/gom
-
-bundle:
-	gom install
-
 check-mysql-user: check-mysql-user.go
-	gom build -o check-mysql-user
+	go build $(LDFLAGS) -o check-mysql-user
 
 linux: check-mysql-user.go
-	GOOS=linux GOARCH=amd64 gom build -o check-mysql-user
-
-fmt:
-	go fmt ./...
-
-dist:
-	git archive --format tgz HEAD -o check-mysql-user-$(VERSION).tar.gz --prefix check-mysql-user-$(VERSION)/
+	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o check-mysql-user
 
 clean:
-	rm -rf check-mysql-user check-mysql-user-*.tar.gz
+	rm -rf check-mysql-user
 
+tag:
+	git tag v${VERSION}
+	git push origin v${VERSION}
+	git push origin master
+	goreleaser --rm-dist

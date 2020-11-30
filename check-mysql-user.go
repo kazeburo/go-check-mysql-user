@@ -1,27 +1,27 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"runtime"
+	"time"
 
+	_ "github.com/go-sql-driver/mysql"
 	"github.com/jessevdk/go-flags"
+	"github.com/kazeburo/go-mysqlflags"
 	"github.com/mackerelio/checkers"
-	"github.com/ziutek/mymysql/mysql"
-	_ "github.com/ziutek/mymysql/native"
 )
 
 // Version by Makefile
 var version string
 
-type options struct {
-	Host        string `short:"H" long:"host" default:"localhost" description:"Hostname"`
-	Port        string `short:"p" long:"port" default:"3306" description:"Port"`
-	User        string `short:"u" long:"user" default:"root" description:"Username"`
-	Pass        string `short:"P" long:"password" default:"" description:"Password"`
-	AccountName string `short:"a" long:"account-name" arg:"String" required:"true" description:"account user name"`
-	AccountHost string `short:"n" long:"account-host" arg:"String" required:"true" description:"account user host"`
-	Version     bool   `short:"v" long:"version" description:"Show version"`
+type Opts struct {
+	mysqlflags.MyOpts
+	Timeout     time.Duration `long:"timeout" default:"5s" description:"Timeout to connect mysql"`
+	AccountName string        `short:"a" long:"account-name" arg:"String" required:"true" description:"account user name"`
+	AccountHost string        `short:"n" long:"account-host" arg:"String" required:"true" description:"account user host"`
+	Version     bool          `short:"v" long:"version" description:"Show version"`
 }
 
 func main() {
@@ -31,7 +31,7 @@ func main() {
 }
 
 func checkUser() *checkers.Checker {
-	opts := options{}
+	opts := Opts{}
 	psr := flags.NewParser(&opts, flags.HelpFlag|flags.PassDoubleDash)
 	_, err := psr.Parse()
 	if opts.Version {
@@ -46,21 +46,36 @@ func checkUser() *checkers.Checker {
 		os.Exit(1)
 	}
 
-	db := mysql.New("tcp", "", fmt.Sprintf("%s:%s", opts.Host, opts.Port), opts.User, opts.Pass, "")
-	err = db.Connect()
+	db, err := mysqlflags.OpenDB(opts.MyOpts, opts.Timeout, false)
 	if err != nil {
-		return checkers.Critical("couldn't connect DB")
+		return checkers.Critical(fmt.Sprintf("couldn't connect DB: %v", err))
 	}
 	defer db.Close()
 
-	stmt, err := db.Prepare("SELECT COUNT(*) FROM mysql.user WHERE Host=? AND User=?")
-	if err != nil {
-		return checkers.Critical(fmt.Sprintf("db.Prepare:%s", err))
+	var num int64
+
+	ctx, cancel := context.WithTimeout(context.Background(), opts.Timeout)
+	defer cancel()
+	ch := make(chan error, 1)
+
+	go func() {
+		ch <- db.QueryRow(
+			"SELECT COUNT(*) FROM mysql.user WHERE Host=? AND User=?",
+			opts.AccountHost,
+			opts.AccountName,
+		).Scan(&num)
+	}()
+
+	select {
+	case err = <-ch:
+		// nothing
+	case <-ctx.Done():
+		err = fmt.Errorf("connection or query timeout")
 	}
 
-	stmt.Bind(opts.AccountHost, opts.AccountName)
-	rows, _, err := stmt.Exec()
-	num := rows[0].Int64(0)
+	if err != nil {
+		return checkers.Critical(fmt.Sprintf("Couldn't fetch mysql.user: %v", err))
+	}
 
 	if num < 1 {
 		return checkers.Critical(fmt.Sprintf("user '%s'@'%s' not found", opts.AccountName, opts.AccountHost))

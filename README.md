@@ -1,6 +1,8 @@
 # go-check-mysql-user
 
-usage
+check mysql user exists
+
+## usage
 
 ```
 Usage:
@@ -23,3 +25,6 @@ $ check-mysql-user --account-name=readuser --account-host=localhost
 MySQL User OK: user 'readuser'@'localhost' exists
 ```
 
+  ## Install
+
+Please download release page or `mkr plugin install kazeburo/go-check-mysql-user`.
